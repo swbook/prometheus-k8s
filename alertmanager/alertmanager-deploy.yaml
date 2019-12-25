@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: prometheus-huang
+  labels:
+    k8s-app: alertmanager
+    kubernetes.io/cluster-service: "true"
+    addonmanager.kubernetes.io/mode: Reconcile
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: alertmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: alertmanager
+  template:
+    metadata:
+      labels:
+        k8s-app: alertmanager
+    spec:
+      serviceAccountName: alertmanager
+      containers:
+        - name: prometheus-alertmanager
+          image: registry.cn-hangzhou.aliyuncs.com/ci-base/alertmanager:v0.16.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config.file=/etc/config/alertmanager.yml
+            - --storage.path=/data
+            - --web.listen-address=:9093
+            - --web.route-prefix=/
+            - --cluster.listen-address=$(POD_IP):6783
+            - --cluster.peer=alertmanager-operated.prometheus-huang.svc:6783
+            - --log.level=debug
+          env:
+          - name: POD_IP
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: status.podIP
+          ports:
+            - containerPort: 9093
+              name: http
+            - containerPort: 6783
+              name: mesh
+          readinessProbe:
+            httpGet:
+              path: /#/status
+              port: 9093
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+          volumeMounts:
+            - name: config-volume
+              mountPath: "/etc/config/alertmanager.yml"
+              subPath: alertmanager.yml
+            - name: alertmanager-data
+              mountPath: "/data"
+              subPath: ""
+          resources:
+            limits:
+              cpu: 10m
+              memory: 50Mi
+            requests:
+              cpu: 10m
+              memory: 50Mi
+      volumes:
+        - name: config-volume
+          configMap:
+            name: alertmanager-config
+        - name: alertmanager-data
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: k8s-apps
+                operator: In
+                values:
+                - alertmanager
+            topologyKey: "kubernetes.io/hostname"

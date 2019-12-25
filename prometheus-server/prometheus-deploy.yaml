@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-server
+  namespace: prometheus-huang
+  labels:
+    k8s-app: prometheus
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: prometheus
+    kubernetes.io/cluster-service: "true"
+    addonmanager.kubernetes.io/mode: Reconcile
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: prometheus
+  template:
+    metadata:
+      name: prometheus-server
+      labels:
+        k8s-app: prometheus
+    spec:
+      serviceAccountName: prometheus
+      initContainers:
+      - name: "init-chown-data"
+        image: debian:9
+        imagePullPolicy: IfNotPresent
+        command: ["chown", "-R", "65534:65534", "/data"]
+        volumeMounts:
+        - name: prometheus-data
+          mountPath: /data
+          subPath: ""
+      containers:
+        - name: prometheus-server
+          image: quay.io/prometheus/prometheus:v2.11.1
+          imagePullPolicy: "IfNotPresent"
+          args:
+            - --config.file=/etc/config/prometheus.yaml
+            - --storage.tsdb.path=/data
+            - --web.console.libraries=/etc/prometheus/console_libraries
+            - --web.console.templates=/etc/prometheus/consoles
+            - --web.enable-lifecycle
+          ports:
+            - containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+          volumeMounts:
+            - name: config-volume
+              mountPath: "/etc/config/prometheus.yaml"
+              subPath: prometheus.yaml
+            - name: rule-config-volume
+              mountPath: "/etc/config/alerts.yaml"
+              subPath: alerts.yaml
+            - name: prometheus-data
+              mountPath: /data
+              subPath: ""
+      terminationGracePeriodSeconds: 300
+      volumes:
+        - name: config-volume
+          configMap:
+            name: prometheus-config
+        - name: rule-config-volume
+          configMap:
+            name: prometheus-rule-config
+        - name: prometheus-data
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: k8s-app
+                operator: In
+                values:
+                - prometheus
+            topologyKey: "kubernetes.io/hostname"

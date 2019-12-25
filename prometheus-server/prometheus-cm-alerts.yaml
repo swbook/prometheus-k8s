@@ -1,0 +1,124 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rule-config
+  namespace: prometheus-huang
+  labels:
+    kubernetes.io/cluster-service: "true"
+    addonmanager.kubernetes.io/mode: EnsureExists
+data:
+  alerts.yaml: |
+    groups:
+    - name: hostStatsAlert
+      rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "Instance {{$labels.instance}} down"
+          description: "{{$labels.instance}} of job {{$labels.job}} has been down for more than 5 minutes."
+      - alert: hostCpuUsageAlert
+        expr: sum(avg without (cpu)(irate(node_cpu_seconds_total{mode!='idle'}[5m]))) by (instance) > 0.85
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "Instance {{ $labels.instance }} CPU usgae high"
+          description: "{{ $labels.instance }} CPU usage above 85% (current value: {{ $value }})"
+      - alert: hostMemUsageAlert
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)/node_memory_MemTotal_bytes > 0.85
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "Instance {{ $labels.instance }} MEM usgae high"
+          description: "{{ $labels.instance }} MEM usage above 85% (current value: {{ $value }})"
+      - alert: filesystemUsageAlert
+        expr: 100 - ((node_filesystem_avail_bytes{mountpoint="/",fstype=~"ext4|xfs"} * 100) / node_filesystem_size_bytes {mountpoint="/",fstype=~"ext4|xfs"}) > 85
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "Instance {{ $labels.instance }} root DISK usgae high"
+          description: "{{ $labels.instance }} root DISK usage above 85% (current value: {{ $value }})"
+    - name: kubernetes
+      rules:
+      - alert: PodDown
+        expr: kube_pod_status_phase{phase="Unknown"} == 1 or kube_pod_status_phase{phase="Failed"} == 1
+        for: 1m
+        labels:
+          severity: error
+          service: prometheus_bot
+          receiver_group: "{{ $labels.k8scluster}}_{{ $labels.namespace }}"
+        annotations:
+          summary: Pod Down
+          k8scluster: "{{ $labels.k8scluster}}"
+          namespace: "{{ $labels.namespace }}" 
+          pod: "{{ $labels.pod }}"
+          container: "{{ $labels.container }}"
+    
+      - alert: PodRestart
+        expr: changes(kube_pod_container_status_restarts_total{pod !~ "analyzer.*"}[10m]) > 0
+        for: 1m
+        labels:
+          severity: error
+          service: prometheus_bot
+          receiver_group: "{{ $labels.k8scluster}}_{{ $labels.namespace }}"
+        annotations:
+          summary: Pod Restart
+          k8scluster: "{{ $labels.k8scluster}}"
+          namespace: "{{ $labels.namespace }}"
+          pod: "{{ $labels.pod }}"
+          container: "{{ $labels.container }}"
+    
+      - alert: NodeUnschedulable
+        expr: kube_node_spec_unschedulable == 1
+        for: 5m
+        labels:
+          severity: error
+          service: prometheus_bot
+          receiver_group: "{{ $labels.k8scluster}}_{{ $labels.namespace }}"
+        annotations:
+          summary: Node Unschedulable
+          k8scluster: "{{ $labels.k8scluster}}" 
+          node: "{{ $labels.node }}"
+    
+      - alert: NodeStatusError
+        expr: kube_node_status_condition{condition="Ready", status!="true"} == 1
+        for: 5m
+        labels:
+          severity: error
+          service: prometheus_bot
+          receiver_group: "{{ $labels.k8scluster}}_{{ $labels.namespace }}"
+        annotations:
+          summary: Node Status Error
+          k8scluster: "{{ $labels.k8scluster}}" 
+          node: "{{ $labels.node }}"
+    
+      - alert: DaemonsetUnavailable
+        expr: kube_daemonset_status_number_unavailable > 0
+        for: 5m
+        labels:
+          severity: error
+          service: prometheus_bot
+          receiver_group: "{{ $labels.k8scluster}}_{{ $labels.namespace }}"
+        annotations:
+          summary: Daemonset Unavailable
+          k8scluster: "{{ $labels.k8scluster}}" 
+          namespace: "{{ $labels.namespace }}"  
+          daemonset: "{{ $labels.daemonset }}"
+    
+      - alert: JobFailed
+        expr: kube_job_status_failed == 1
+        for: 5m
+        labels:
+          severity: error
+          service: prometheus_bot
+          receiver_group: "{{ $labels.k8scluster}}_{{ $labels.namespace }}"
+        annotations:
+          summary: Job Failed
+          k8scluster: "{{ $labels.k8scluster}}" 
+          namespace: "{{ $labels.namespace }}" 
+          job: "{{ $labels.exported_job }}" 
