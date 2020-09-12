@@ -1,13 +1,16 @@
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: node-exporter
-  namespace: prometheus-huang
+  namespace: kube-system
   labels:
     k8s-app: node-exporter
     app.kubernetes.io/name: node-exporter
     app.kubernetes.io/component: node-exporter
 spec:
+  selector:
+    matchLabels:
+      k8s-app: node-exporter  
   updateStrategy:
     type: OnDelete
   template:
@@ -21,7 +24,8 @@ spec:
           effect: NoSchedule
       containers:
         - name: prometheus-node-exporter
-          image: registry.cn-hangzhou.aliyuncs.com/ci-base/node-exporter:v0.17.0
+          #image: registry.cn-hangzhou.aliyuncs.com/ci-base/node-exporter:v0.17.0
+          image: harbor.op.com/public/node-exporter:v1.0.1
           imagePullPolicy: IfNotPresent
           args:
             - --path.procfs=/host/proc
